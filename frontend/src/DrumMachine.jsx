@@ -174,6 +174,25 @@ const DrumMachine = () => {
     };
   }, []);
 
+  // Keyboard controls
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      // Only trigger if spacebar is pressed and not focused on an input
+      if (event.code === 'Space' && event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+        event.preventDefault(); // Prevent page scroll
+        if (connected) {
+          handlePlayStop();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [connected, isPlaying]);
+
   // Update synthesizer parameters
   const updateSynthParams = () => {
     if (!synthsRef.current.kick) return;
@@ -621,7 +640,7 @@ const DrumMachine = () => {
               🟠 <strong>Orange buttons</strong> = sound will play | ⬜ <strong>Gray buttons</strong> = silent step
             </p>
             <p style={{ marginBottom: '16px' }}>
-              <strong>Controls:</strong> ▶ PLAY, ■ STOP, ✕ CLEAR, TEMPO slider, and sound parameters (PITCH/DECAY/VOL)
+              <strong>Controls:</strong> ▶ PLAY/STOP (or press <kbd style={{ background: '#374151', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SPACEBAR</kbd>), ✕ CLEAR, TEMPO slider, and sound parameters (PITCH/DECAY/VOL)
             </p>
             <p style={{ marginBottom: '24px', textAlign: 'center', padding: '16px', backgroundColor: 'rgba(103, 232, 249, 0.1)', borderRadius: '8px' }}>
               🤝 <strong>Collaborative:</strong> Share this URL with friends to jam together in real-time!
