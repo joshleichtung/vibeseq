@@ -27,7 +27,7 @@ end
 set :public_folder, File.dirname(__FILE__) + '/public'
 
 # Drum pattern state - shared across all users
-@@drum_pattern = {
+$drum_pattern = {
   bpm: 120,
   playing: false,
   current_step: 0,
@@ -62,7 +62,7 @@ get '/' do
         # Send current state to new client
         ws.send(JSON.generate({
           type: 'state_update',
-          data: @@drum_pattern
+          data: $drum_pattern
         }))
         puts "Client connected. Total clients: #{settings.sockets.length}"
       end
@@ -75,9 +75,9 @@ get '/' do
           when 'toggle_step'
             track = data['track']
             step = data['step']
-            if @@drum_pattern[:tracks][track.to_sym]
-              @@drum_pattern[:tracks][track.to_sym][:pattern][step] = 
-                !@@drum_pattern[:tracks][track.to_sym][:pattern][step]
+            if $drum_pattern[:tracks][track.to_sym]
+              $drum_pattern[:tracks][track.to_sym][:pattern][step] = 
+                !$drum_pattern[:tracks][track.to_sym][:pattern][step]
               
               # Broadcast to all clients
               broadcast_message = JSON.generate({
@@ -85,7 +85,7 @@ get '/' do
                 data: {
                   track: track,
                   step: step,
-                  active: @@drum_pattern[:tracks][track.to_sym][:pattern][step]
+                  active: $drum_pattern[:tracks][track.to_sym][:pattern][step]
                 }
               })
               settings.sockets.each { |s| s.send(broadcast_message) }
@@ -94,15 +94,15 @@ get '/' do
           when 'update_params'
             track = data['track']
             params = data['params']
-            if @@drum_pattern[:tracks][track.to_sym]
-              @@drum_pattern[:tracks][track.to_sym][:params].merge!(params)
+            if $drum_pattern[:tracks][track.to_sym]
+              $drum_pattern[:tracks][track.to_sym][:params].merge!(params)
               
               # Broadcast to all clients
               broadcast_message = JSON.generate({
                 type: 'params_update',
                 data: {
                   track: track,
-                  params: @@drum_pattern[:tracks][track.to_sym][:params]
+                  params: $drum_pattern[:tracks][track.to_sym][:params]
                 }
               })
               settings.sockets.each { |s| s.send(broadcast_message) }
@@ -112,32 +112,47 @@ get '/' do
             action = data['action']
             case action
             when 'play'
-              @@drum_pattern[:playing] = true
+              $drum_pattern[:playing] = true
             when 'stop'
-              @@drum_pattern[:playing] = false
-              @@drum_pattern[:current_step] = 0
+              $drum_pattern[:playing] = false
+              $drum_pattern[:current_step] = 0
             when 'set_bpm'
-              @@drum_pattern[:bpm] = data['bpm']
+              $drum_pattern[:bpm] = data['bpm']
             end
             
             # Broadcast to all clients
             broadcast_message = JSON.generate({
               type: 'transport_update',
               data: {
-                playing: @@drum_pattern[:playing],
-                current_step: @@drum_pattern[:current_step],
-                bpm: @@drum_pattern[:bpm]
+                playing: $drum_pattern[:playing],
+                current_step: $drum_pattern[:current_step],
+                bpm: $drum_pattern[:bpm]
               }
             })
             settings.sockets.each { |s| s.send(broadcast_message) }
             
           when 'step_update'
-            @@drum_pattern[:current_step] = data['step']
+            $drum_pattern[:current_step] = data['step']
             
             # Broadcast to all clients
             broadcast_message = JSON.generate({
               type: 'step_position',
               data: { current_step: data['step'] }
+            })
+            settings.sockets.each { |s| s.send(broadcast_message) }
+            
+          when 'clear_pattern'
+            puts "Clearing pattern..."
+            # Clear all patterns
+            $drum_pattern[:tracks].each do |track, track_data|
+              track_data[:pattern] = Array.new(16, false)
+            end
+            
+            puts "Pattern cleared, broadcasting to #{settings.sockets.length} clients"
+            # Broadcast to all clients
+            broadcast_message = JSON.generate({
+              type: 'state_update',
+              data: $drum_pattern
             })
             settings.sockets.each { |s| s.send(broadcast_message) }
           end
@@ -158,5 +173,5 @@ end
 # API endpoint to get current state
 get '/api/state' do
   content_type :json
-  JSON.generate(@@drum_pattern)
+  JSON.generate($drum_pattern)
 end
