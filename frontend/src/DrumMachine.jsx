@@ -92,7 +92,10 @@ const DrumMachine = () => {
   useEffect(() => {
     const connectWebSocket = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
+      // In development, connect to the Ruby backend on port 4567
+      // In production, use the same host as the frontend
+      const isDevelopment = window.location.hostname === 'localhost' && window.location.port === '5173';
+      const host = isDevelopment ? 'localhost:4567' : window.location.host;
       const wsUrl = `${protocol}//${host}/`;
       
       wsRef.current = new WebSocket(wsUrl);
