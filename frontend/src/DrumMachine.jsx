@@ -25,6 +25,7 @@ const DrumMachine = () => {
   const [isCompanionMode, setIsCompanionMode] = useState(
     window.location.pathname === '/companion'
   );
+  const [isVisualizationBackground, setIsVisualizationBackground] = useState(false);
 
   const sequenceRef = useRef(null);
   const synthsRef = useRef({});
@@ -47,12 +48,12 @@ const DrumMachine = () => {
       // Create a single master analyzer to capture all audio more reliably
       const masterAnalyzer = new Tone.Analyser('fft', 1024);
       
-      // Create analyzers for each track (these might not work well with short sounds)
+      // Create analyzers for each track - all using FFT for frequency spectrum visualization
       analyzersRef.current = {
         kick: new Tone.Analyser('fft', 512),
         snare: new Tone.Analyser('fft', 512),
-        hihat: new Tone.Analyser('waveform', 256),
-        openhat: new Tone.Analyser('waveform', 256),
+        hihat: new Tone.Analyser('fft', 512),
+        openhat: new Tone.Analyser('fft', 512),
         master: masterAnalyzer // Add master analyzer
       };
 
@@ -412,25 +413,28 @@ const DrumMachine = () => {
   };
 
   return (
-    <>
-      {/* Full-width Visualization at the top */}
-      <VisualizationCanvas 
-        analyzers={analyzersRef.current}
-        isPlaying={isPlaying}
-        currentStep={currentStep}
-      />
+    <div className="relative min-h-screen overflow-hidden">
+      {/* Always show visualization as full-screen background */}
+      <div 
+        className="fixed top-0 left-0 z-0"
+        style={{ 
+          width: '100vw', 
+          height: '100vh',
+          pointerEvents: 'none' // Allow clicks to pass through to UI below
+        }}
+      >
+        <VisualizationCanvas 
+          analyzers={analyzersRef.current}
+          isPlaying={isPlaying}
+          currentStep={currentStep}
+          isBackground={true}
+        />
+      </div>
       
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-pink-900 to-indigo-900 relative overflow-hidden">
-        {/* Vaporwave Background Elements */}
-        <div className="absolute inset-0 bg-gradient-to-t from-cyan-400/10 via-transparent to-pink-400/10"></div>
-        <div className="absolute top-0 left-0 w-full h-full">
-          <div className="absolute top-20 left-10 w-32 h-32 bg-pink-400/20 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-32 right-16 w-48 h-48 bg-cyan-400/20 rounded-full blur-3xl"></div>
-          <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-purple-400/20 rounded-full blur-2xl"></div>
-        </div>
-        
-        {/* Main Content Container */}
-        <div className="relative z-10 flex items-center justify-center min-h-screen p-8">
+      {/* Main Content Container - always on top but with conditional opacity */}
+      <div className={`relative z-10 min-h-screen flex items-center justify-center p-8 ${
+        isVisualizationBackground ? 'bg-transparent' : 'bg-black/20'
+      }`}>
         <div className="w-full max-w-6xl">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -459,6 +463,18 @@ const DrumMachine = () => {
                 <span>{isCompanionMode ? '🔇' : '🔊'}</span> 
                 {isCompanionMode ? 'Companion' : 'Audio'}
               </button>
+
+              <button
+                onClick={() => setIsVisualizationBackground(!isVisualizationBackground)}
+                className={`px-4 py-2 rounded-full backdrop-blur-sm transition-all duration-200 flex items-center gap-2 font-medium border ${
+                  isVisualizationBackground 
+                    ? 'bg-cyan-500/20 border-cyan-400/30 text-cyan-200 hover:bg-cyan-500/30' 
+                    : 'bg-pink-500/20 border-pink-400/30 text-pink-200 hover:bg-pink-500/30'
+                }`}
+              >
+                <span>{isVisualizationBackground ? '📺' : '🎨'}</span> 
+                {isVisualizationBackground ? 'UI On Top' : 'Viz On Top'}
+              </button>
               
               <div className={`flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-sm border ${
                 connected 
@@ -472,7 +488,7 @@ const DrumMachine = () => {
           </div>
 
           {/* Drum Machine Container - Vintage 909 Style */}
-          <div className="bg-gradient-to-br from-slate-200 to-slate-300 rounded-3xl p-12 shadow-2xl border-8 border-slate-400/50 backdrop-blur-sm relative">
+          <div className="rounded-3xl p-12 border-8 border-slate-400/20 backdrop-blur-sm relative bg-transparent">
             {/* Vintage Labels */}
             <div className="absolute top-4 left-8 bg-slate-700 text-slate-200 px-4 py-1 rounded-full text-xs font-bold tracking-wider">
               CR-909 COLLABORATIVE
@@ -483,7 +499,7 @@ const DrumMachine = () => {
               </div>
             )}
             {/* Transport Controls */}
-            <div className="flex items-center justify-center gap-6 mb-10 p-6 bg-slate-800 rounded-2xl shadow-inner border-4 border-slate-600/50">
+            <div className="flex items-center justify-center gap-6 mb-10 p-6 bg-slate-800/30 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
               <button
                 onClick={handlePlayStop}
                 disabled={!connected}
@@ -520,7 +536,7 @@ const DrumMachine = () => {
             {/* Pattern Grid */}
             <div className="space-y-4">
               {Object.keys(pattern).map(track => (
-                <div key={track} className="p-6 bg-slate-700 rounded-2xl border-4 border-slate-600/50 shadow-inner">
+                <div key={track} className="p-6 bg-slate-700/20 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
                   <div className="flex items-center gap-6 mb-6">
                     <h3 className="text-xl font-bold text-slate-100 capitalize w-24 bg-slate-800 px-4 py-2 rounded-lg border-2 border-slate-600 text-center tracking-wider">
                       {track.toUpperCase()}
@@ -575,7 +591,7 @@ const DrumMachine = () => {
                   </div>
                   
                   {/* Step Grid */}
-                  <div className="grid grid-cols-16 gap-3 p-4 bg-slate-800 rounded-xl border-2 border-slate-600">
+                  <div className="grid grid-cols-16 gap-3 p-4 bg-slate-800/20 rounded-xl border-2 border-slate-600/20 backdrop-blur-sm">
                     {pattern[track].map((active, stepIndex) => (
                       <button
                         key={stepIndex}
@@ -600,7 +616,6 @@ const DrumMachine = () => {
                   </div>
                 </div>
               ))}
-          </div>
             </div>
           </div>
         </div>
@@ -692,7 +707,7 @@ const DrumMachine = () => {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 
