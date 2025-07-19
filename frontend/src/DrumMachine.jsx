@@ -305,27 +305,29 @@ const DrumMachine = () => {
     });
   };
 
-  const handlePlay = async () => {
-    try {
-      if (!isCompanionMode && Tone.context.state !== 'running') {
-        await Tone.start();
-        console.log('Audio context started');
-      }
-      
+  const handlePlayStop = async () => {
+    if (isPlaying) {
+      // Stop
       sendWebSocketMessage({
         type: 'transport_control',
-        action: 'play'
+        action: 'stop'
       });
-    } catch (error) {
-      console.error('Failed to start audio:', error);
+    } else {
+      // Play
+      try {
+        if (!isCompanionMode && Tone.context.state !== 'running') {
+          await Tone.start();
+          console.log('Audio context started');
+        }
+        
+        sendWebSocketMessage({
+          type: 'transport_control',
+          action: 'play'
+        });
+      } catch (error) {
+        console.error('Failed to start audio:', error);
+      }
     }
-  };
-
-  const handleStop = () => {
-    sendWebSocketMessage({
-      type: 'transport_control',
-      action: 'stop'
-    });
   };
 
   const handleBpmChange = (newBpm) => {
@@ -437,18 +439,15 @@ const DrumMachine = () => {
             {/* Transport Controls */}
             <div className="flex items-center justify-center gap-6 mb-10 p-6 bg-slate-800 rounded-2xl shadow-inner border-4 border-slate-600/50">
               <button
-                onClick={handlePlay}
+                onClick={handlePlayStop}
                 disabled={!connected}
-                className="px-8 py-3 bg-gradient-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-emerald-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
+                className={`px-8 py-3 rounded-xl font-bold text-slate-900 shadow-lg border-2 transition-all duration-200 transform active:scale-95 ${
+                  isPlaying
+                    ? 'bg-gradient-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 border-rose-600'
+                    : 'bg-gradient-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 border-emerald-600'
+                } disabled:from-slate-400 disabled:to-slate-500 disabled:border-slate-600`}
               >
-                ▶ PLAY
-              </button>
-              <button
-                onClick={handleStop}
-                disabled={!connected}
-                className="px-8 py-3 bg-gradient-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-rose-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
-              >
-                ■ STOP
+                {isPlaying ? '■ STOP' : '▶ PLAY'}
               </button>
               <button
                 onClick={handleClearPattern}
