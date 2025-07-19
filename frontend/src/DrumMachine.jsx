@@ -24,6 +24,8 @@ const DrumMachine = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [bpm, setBpm] = useState(120);
+  const [swing, setSwing] = useState(0);
+  const [isStuttering, setIsStuttering] = useState(false);
   const [connected, setConnected] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [isCompanionMode, setIsCompanionMode] = useState(
@@ -37,6 +39,7 @@ const DrumMachine = () => {
   const effectsRef = useRef({});
   const wsRef = useRef(null);
   const paramUpdateTimeouts = useRef({});
+  const stutterRef = useRef(null);
   
   // Musical patterns for arp and bass in C major
   const arpPattern = [
@@ -185,6 +188,12 @@ const DrumMachine = () => {
           filter: { Q: 2, frequency: 120 }
         }).fan(analyzersRef.current.bass, masterAnalyzer).toDestination()
       };
+
+      // Create stutter effect
+      stutterRef.current = new Tone.Gate({
+        threshold: -50,
+        smoothing: 0.01
+      }).toDestination();
 
       // Apply initial parameters
       updateSynthParams();
@@ -429,34 +438,49 @@ const DrumMachine = () => {
     updateSynthParams();
   }, [params]);
 
+  // Helper function to trigger sounds for a step
+  const triggerStepSounds = (step, time) => {
+    Object.keys(pattern).forEach(track => {
+      if (pattern[track][step] && synthsRef.current[track]) {
+        if (track === 'kick') {
+          synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
+        } else if (track === 'snare') {
+          synthsRef.current[track].triggerAttackRelease(params[track].decay, time);
+        } else if (track === 'arp') {
+          // Play arpeggio note
+          const note = arpPattern[step];
+          synthsRef.current[track].triggerAttackRelease(note, '8n', time);
+        } else if (track === 'bass') {
+          // Play bass note
+          const note = bassPattern[step];
+          synthsRef.current[track].triggerAttackRelease(note, '4n', time);
+        } else {
+          synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
+        }
+      }
+    });
+  };
+
   // Sequencer logic
   useEffect(() => {
     if (isPlaying) {
       if (!isCompanionMode) {
         // Audio mode: full audio synthesis
         Tone.Transport.bpm.value = bpm;
+        Tone.Transport.swing = swing;
         
         sequenceRef.current = new Tone.Sequence((time, step) => {
-          // Trigger sounds for active steps
-          Object.keys(pattern).forEach(track => {
-            if (pattern[track][step] && synthsRef.current[track]) {
-              if (track === 'kick') {
-                synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
-              } else if (track === 'snare') {
-                synthsRef.current[track].triggerAttackRelease(params[track].decay, time);
-              } else if (track === 'arp') {
-                // Play arpeggio note
-                const note = arpPattern[step];
-                synthsRef.current[track].triggerAttackRelease(note, '8n', time);
-              } else if (track === 'bass') {
-                // Play bass note
-                const note = bassPattern[step];
-                synthsRef.current[track].triggerAttackRelease(note, '4n', time);
-              } else {
-                synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
-              }
+          // Apply stutter effect if active
+          if (isStuttering) {
+            // Create rapid retriggering for stutter effect
+            const stutterInterval = 0.02; // 20ms between stutters
+            for (let i = 0; i < 5; i++) {
+              const stutterTime = time + (i * stutterInterval);
+              triggerStepSounds(step, stutterTime);
             }
-          });
+          } else {
+            triggerStepSounds(step, time);
+          }
 
           // Update current step for UI
           Tone.Draw.schedule(() => {
@@ -508,7 +532,7 @@ const DrumMachine = () => {
         }
       }
     };
-  }, [isPlaying, pattern, params, bpm, isCompanionMode]);
+  }, [isPlaying, pattern, params, bpm, swing, isStuttering, isCompanionMode]);
 
   const sendWebSocketMessage = (message) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -752,6 +776,37 @@ const DrumMachine = () => {
                 />
                 <span className="font-mono text-pink-300 bg-slate-900 rounded-lg border border-slate-600 text-center" style={{ padding: '0.75rem 1.5rem', fontSize: '1.25rem', minWidth: '4rem' }}>{bpm}</span>
               </div>
+              
+              <div className="flex items-center gap-6 bg-slate-700 rounded-xl border-2 border-slate-600" style={{ padding: '1.5rem 2rem' }}>
+                <label className="font-bold text-purple-300 tracking-wider" style={{ fontSize: '1.25rem' }}>SWING:</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={swing}
+                  onChange={(e) => setSwing(parseFloat(e.target.value))}
+                  disabled={!connected}
+                  className="accent-purple-400"
+                  style={{ width: '8rem', height: '0.75rem' }}
+                />
+                <span className="font-mono text-pink-300 bg-slate-900 rounded-lg border border-slate-600 text-center" style={{ padding: '0.75rem 1rem', fontSize: '1.25rem', minWidth: '3rem' }}>{swing}</span>
+              </div>
+              
+              <button
+                onMouseDown={() => setIsStuttering(true)}
+                onMouseUp={() => setIsStuttering(false)}
+                onMouseLeave={() => setIsStuttering(false)}
+                disabled={!connected || !isPlaying}
+                className={`bg-gradient-to-b rounded-xl font-bold text-slate-900 shadow-lg border-2 transition-all duration-200 transform active:scale-95 ${
+                  isStuttering
+                    ? 'from-red-400 to-red-500 border-red-600 scale-95'
+                    : 'from-violet-400 to-violet-500 hover:from-violet-300 hover:to-violet-400 border-violet-600'
+                } disabled:from-slate-400 disabled:to-slate-500 disabled:border-slate-600`}
+                style={{ padding: '1.5rem 2rem', fontSize: '1.25rem', minHeight: '4rem', minWidth: '6rem' }}
+              >
+                {isStuttering ? '🔥 STUTTER' : '⚡ STUTTER'}
+              </button>
             </div>
 
             {/* Pattern Grid */}
