@@ -44,27 +44,31 @@ const DrumMachine = () => {
         await Tone.start();
       }
 
-      // Create analyzers for each track
+      // Create a single master analyzer to capture all audio more reliably
+      const masterAnalyzer = new Tone.Analyser('fft', 1024);
+      
+      // Create analyzers for each track (these might not work well with short sounds)
       analyzersRef.current = {
         kick: new Tone.Analyser('fft', 512),
         snare: new Tone.Analyser('fft', 512),
         hihat: new Tone.Analyser('waveform', 256),
-        openhat: new Tone.Analyser('waveform', 256)
+        openhat: new Tone.Analyser('waveform', 256),
+        master: masterAnalyzer // Add master analyzer
       };
 
-      // Create drum synthesizers with analyzers in the chain
+      // Create drum synthesizers - connect both to individual analyzers AND master
       synthsRef.current = {
         kick: new Tone.MembraneSynth({
           pitchDecay: 0.05,
           octaves: 10,
           oscillator: { type: 'sine' },
           envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 }
-        }).connect(analyzersRef.current.kick).toDestination(),
+        }).fan(analyzersRef.current.kick, masterAnalyzer).toDestination(),
 
         snare: new Tone.NoiseSynth({
           noise: { type: 'white' },
           envelope: { attack: 0.005, decay: 0.1, sustain: 0.0 }
-        }).connect(analyzersRef.current.snare).toDestination(),
+        }).fan(analyzersRef.current.snare, masterAnalyzer).toDestination(),
 
         hihat: new Tone.MetalSynth({
           frequency: 200,
@@ -73,7 +77,7 @@ const DrumMachine = () => {
           modulationIndex: 32,
           resonance: 4000,
           octaves: 1.5
-        }).connect(analyzersRef.current.hihat).toDestination(),
+        }).fan(analyzersRef.current.hihat, masterAnalyzer).toDestination(),
 
         openhat: new Tone.MetalSynth({
           frequency: 200,
@@ -82,7 +86,7 @@ const DrumMachine = () => {
           modulationIndex: 32,
           resonance: 4000,
           octaves: 1.5
-        }).connect(analyzersRef.current.openhat).toDestination()
+        }).fan(analyzersRef.current.openhat, masterAnalyzer).toDestination()
       };
 
       // Apply initial parameters
