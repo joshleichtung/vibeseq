@@ -223,17 +223,29 @@ const DrumMachine = () => {
       synthsRef.current.kick.frequency.value = params.kick.pitch;
     }
     synthsRef.current.kick.volume.value = Tone.gainToDb(params.kick.volume);
+    if (synthsRef.current.kick.envelope) {
+      synthsRef.current.kick.envelope.decay = params.kick.decay;
+    }
 
     // Update snare parameters  
     synthsRef.current.snare.volume.value = Tone.gainToDb(params.snare.volume);
+    if (synthsRef.current.snare.envelope) {
+      synthsRef.current.snare.envelope.decay = params.snare.decay;
+    }
 
     // Update hihat parameters
     synthsRef.current.hihat.frequency.value = params.hihat.pitch;
     synthsRef.current.hihat.volume.value = Tone.gainToDb(params.hihat.volume);
+    if (synthsRef.current.hihat.envelope) {
+      synthsRef.current.hihat.envelope.decay = params.hihat.decay;
+    }
 
     // Update open hat parameters
     synthsRef.current.openhat.frequency.value = params.openhat.pitch;
     synthsRef.current.openhat.volume.value = Tone.gainToDb(params.openhat.volume);
+    if (synthsRef.current.openhat.envelope) {
+      synthsRef.current.openhat.envelope.decay = params.openhat.decay;
+    }
   };
 
   useEffect(() => {
@@ -414,6 +426,18 @@ const DrumMachine = () => {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
+      {/* Banner at top left */}
+      <div className="absolute top-4 left-4 z-20 flex items-center gap-6">
+        <img 
+          src="/header.png" 
+          alt="Collaborative Drum Machine" 
+          className="max-h-[20vh] w-auto object-contain"
+        />
+        <div className="text-white font-bold bg-black/50 rounded-lg backdrop-blur-sm border border-white/20" style={{ fontSize: '4rem', padding: '2rem 3rem' }}>
+          Join at vibeseq.fly.dev
+        </div>
+      </div>
+
       {/* Always show visualization as full-screen background */}
       <div 
         className="fixed top-0 left-0 z-0"
@@ -432,9 +456,12 @@ const DrumMachine = () => {
       </div>
       
       {/* Main Content Container - always on top but with conditional opacity */}
-      <div className={`relative z-10 min-h-screen flex items-center justify-center p-8 ${
-        isVisualizationBackground ? 'bg-transparent' : 'bg-black/20'
-      }`}>
+      <div 
+        className={`relative z-10 min-h-screen flex items-start justify-center p-8 ${
+          isVisualizationBackground ? 'bg-transparent' : 'bg-black/20'
+        }`}
+        style={{ paddingTop: '25vh' }}
+      >
         <div className="w-full max-w-6xl">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -489,37 +516,35 @@ const DrumMachine = () => {
 
           {/* Drum Machine Container - Vintage 909 Style */}
           <div className="rounded-3xl p-12 border-8 border-slate-400/20 backdrop-blur-sm relative bg-transparent">
-            {/* Vintage Labels */}
-            <div className="absolute top-4 left-8 bg-slate-700 text-slate-200 px-4 py-1 rounded-full text-xs font-bold tracking-wider">
-              CR-909 COLLABORATIVE
-            </div>
             {isCompanionMode && (
               <div className="absolute top-4 right-8 bg-purple-600 text-purple-100 px-4 py-1 rounded-full text-xs font-bold tracking-wider animate-pulse">
                 🔇 COMPANION MODE
               </div>
             )}
             {/* Transport Controls */}
-            <div className="flex items-center justify-center gap-6 mb-10 p-6 bg-slate-800/30 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
+            <div className="flex items-center justify-start gap-12 mb-10 p-8 bg-slate-800/30 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
               <button
                 onClick={handlePlayStop}
                 disabled={!connected}
-                className={`px-8 py-3 rounded-xl font-bold text-slate-900 shadow-lg border-2 transition-all duration-200 transform active:scale-95 ${
+                className={`rounded-xl font-bold text-slate-900 shadow-lg border-2 transition-all duration-200 transform active:scale-95 ${
                   isPlaying
                     ? 'bg-gradient-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 border-rose-600'
                     : 'bg-gradient-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 border-emerald-600'
                 } disabled:from-slate-400 disabled:to-slate-500 disabled:border-slate-600`}
+                style={{ padding: '1.5rem 3rem', fontSize: '1.5rem', minHeight: '4rem', minWidth: '8rem' }}
               >
                 {isPlaying ? '■ STOP' : '▶ PLAY'}
               </button>
               <button
                 onClick={handleClearPattern}
                 disabled={!connected}
-                className="px-8 py-3 bg-gradient-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-amber-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
+                className="bg-gradient-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-amber-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
+                style={{ padding: '1.5rem 3rem', fontSize: '1.5rem', minHeight: '4rem', minWidth: '8rem' }}
               >
                 ✕ CLEAR
               </button>
-              <div className="flex items-center gap-3 bg-slate-700 px-6 py-3 rounded-xl border-2 border-slate-600">
-                <label className="text-sm font-bold text-cyan-300 tracking-wider">TEMPO:</label>
+              <div className="flex items-center gap-6 bg-slate-700 rounded-xl border-2 border-slate-600" style={{ padding: '1.5rem 2rem' }}>
+                <label className="font-bold text-cyan-300 tracking-wider" style={{ fontSize: '1.25rem' }}>TEMPO:</label>
                 <input
                   type="range"
                   min="60"
@@ -527,9 +552,10 @@ const DrumMachine = () => {
                   value={bpm}
                   onChange={(e) => handleBpmChange(parseInt(e.target.value))}
                   disabled={!connected}
-                  className="w-24 accent-cyan-400"
+                  className="accent-cyan-400"
+                  style={{ width: '12rem', height: '0.75rem' }}
                 />
-                <span className="text-sm font-mono text-pink-300 bg-slate-900 px-3 py-1 rounded-lg border border-slate-600 min-w-[3rem] text-center">{bpm}</span>
+                <span className="font-mono text-pink-300 bg-slate-900 rounded-lg border border-slate-600 text-center" style={{ padding: '0.75rem 1.5rem', fontSize: '1.25rem', minWidth: '4rem' }}>{bpm}</span>
               </div>
             </div>
 
@@ -537,15 +563,15 @@ const DrumMachine = () => {
             <div className="space-y-4">
               {Object.keys(pattern).map(track => (
                 <div key={track} className="p-6 bg-slate-700/20 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
-                  <div className="flex items-center gap-6 mb-6">
-                    <h3 className="text-xl font-bold text-slate-100 capitalize w-24 bg-slate-800 px-4 py-2 rounded-lg border-2 border-slate-600 text-center tracking-wider">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-3xl font-bold text-slate-100 capitalize bg-slate-800 py-3 px-8 rounded-lg border-2 border-slate-600 text-center tracking-wider">
                       {track.toUpperCase()}
                     </h3>
                     
                     {/* Parameter Controls */}
                     <div className="flex items-center gap-6 text-sm">
                       <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
-                        <label className="text-cyan-300 font-bold tracking-wider">PITCH:</label>
+                        <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">PITCH:</label>
                         <input
                           type="range"
                           min={track === 'kick' ? 40 : 100}
@@ -559,7 +585,7 @@ const DrumMachine = () => {
                       </div>
                       
                       <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
-                        <label className="text-cyan-300 font-bold tracking-wider">DECAY:</label>
+                        <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">DECAY:</label>
                         <input
                           type="range"
                           min="0.1"
@@ -574,7 +600,7 @@ const DrumMachine = () => {
                       </div>
                       
                       <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
-                        <label className="text-cyan-300 font-bold tracking-wider">VOL:</label>
+                        <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">VOL:</label>
                         <input
                           type="range"
                           min="0"
