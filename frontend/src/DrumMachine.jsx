@@ -23,7 +23,7 @@ const DrumMachine = () => {
   const [connected, setConnected] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [isCompanionMode, setIsCompanionMode] = useState(
-    window.location.pathname === '/companion'
+    window.location.pathname !== '/audio'
   );
   const [isVisualizationBackground, setIsVisualizationBackground] = useState(false);
 
@@ -31,6 +31,7 @@ const DrumMachine = () => {
   const synthsRef = useRef({});
   const analyzersRef = useRef({});
   const wsRef = useRef(null);
+  const paramUpdateTimeouts = useRef({});
 
   // Initialize audio synthesis
   useEffect(() => {
@@ -350,11 +351,24 @@ const DrumMachine = () => {
   };
 
   const updateParams = (track, newParams) => {
-    sendWebSocketMessage({
-      type: 'update_params',
-      track: track,
-      params: newParams
-    });
+    // Update local state immediately for responsive UI
+    setParams(prev => ({
+      ...prev,
+      [track]: newParams
+    }));
+    
+    // Debounce WebSocket updates to prevent audio stuttering
+    if (paramUpdateTimeouts.current[track]) {
+      clearTimeout(paramUpdateTimeouts.current[track]);
+    }
+    
+    paramUpdateTimeouts.current[track] = setTimeout(() => {
+      sendWebSocketMessage({
+        type: 'update_params',
+        track: track,
+        params: newParams
+      });
+    }, 100); // 100ms debounce delay
   };
 
   const handlePlayStop = async () => {
@@ -402,7 +416,7 @@ const DrumMachine = () => {
     setIsCompanionMode(newMode);
     
     // Update URL without page refresh
-    const newPath = newMode ? '/companion' : '/';
+    const newPath = newMode ? '/' : '/audio';
     window.history.pushState({}, '', newPath);
   };
 
