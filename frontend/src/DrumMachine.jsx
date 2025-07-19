@@ -92,7 +92,8 @@ const DrumMachine = () => {
   useEffect(() => {
     const connectWebSocket = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//localhost:4567/`;
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/`;
       
       wsRef.current = new WebSocket(wsUrl);
 
