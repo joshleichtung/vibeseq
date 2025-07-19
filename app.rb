@@ -8,7 +8,7 @@ set :bind, '0.0.0.0'
 set :port, 4567
 
 # Disable Rack::Protection for Fly.io deployment
-set :protection, false
+disable :protection
 
 # Enable CORS for frontend
 configure do
