@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Tone from 'tone';
+import VisualizationCanvas from './components/VisualizationCanvas';
 
 const DrumMachine = () => {
   const [pattern, setPattern] = useState({
@@ -27,6 +28,7 @@ const DrumMachine = () => {
 
   const sequenceRef = useRef(null);
   const synthsRef = useRef({});
+  const analyzersRef = useRef({});
   const wsRef = useRef(null);
 
   // Initialize audio synthesis
@@ -42,19 +44,27 @@ const DrumMachine = () => {
         await Tone.start();
       }
 
-      // Create drum synthesizers
+      // Create analyzers for each track
+      analyzersRef.current = {
+        kick: new Tone.Analyser('fft', 512),
+        snare: new Tone.Analyser('fft', 512),
+        hihat: new Tone.Analyser('waveform', 256),
+        openhat: new Tone.Analyser('waveform', 256)
+      };
+
+      // Create drum synthesizers with analyzers in the chain
       synthsRef.current = {
         kick: new Tone.MembraneSynth({
           pitchDecay: 0.05,
           octaves: 10,
           oscillator: { type: 'sine' },
           envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 }
-        }).toDestination(),
+        }).connect(analyzersRef.current.kick).toDestination(),
 
         snare: new Tone.NoiseSynth({
           noise: { type: 'white' },
           envelope: { attack: 0.005, decay: 0.1, sustain: 0.0 }
-        }).toDestination(),
+        }).connect(analyzersRef.current.snare).toDestination(),
 
         hihat: new Tone.MetalSynth({
           frequency: 200,
@@ -63,7 +73,7 @@ const DrumMachine = () => {
           modulationIndex: 32,
           resonance: 4000,
           octaves: 1.5
-        }).toDestination(),
+        }).connect(analyzersRef.current.hihat).toDestination(),
 
         openhat: new Tone.MetalSynth({
           frequency: 200,
@@ -72,7 +82,7 @@ const DrumMachine = () => {
           modulationIndex: 32,
           resonance: 4000,
           octaves: 1.5
-        }).toDestination()
+        }).connect(analyzersRef.current.openhat).toDestination()
       };
 
       // Apply initial parameters
@@ -84,6 +94,9 @@ const DrumMachine = () => {
     return () => {
       Object.values(synthsRef.current).forEach(synth => {
         if (synth.dispose) synth.dispose();
+      });
+      Object.values(analyzersRef.current).forEach(analyzer => {
+        if (analyzer.dispose) analyzer.dispose();
       });
     };
   }, [isCompanionMode]);
@@ -396,6 +409,13 @@ const DrumMachine = () => {
 
   return (
     <>
+      {/* Full-width Visualization at the top */}
+      <VisualizationCanvas 
+        analyzers={analyzersRef.current}
+        isPlaying={isPlaying}
+        currentStep={currentStep}
+      />
+      
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-pink-900 to-indigo-900 relative overflow-hidden">
         {/* Vaporwave Background Elements */}
         <div className="absolute inset-0 bg-gradient-to-t from-cyan-400/10 via-transparent to-pink-400/10"></div>
