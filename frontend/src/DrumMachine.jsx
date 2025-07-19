@@ -8,6 +8,8 @@ const DrumMachine = () => {
     snare: Array(16).fill(false),
     hihat: Array(16).fill(false),
     openhat: Array(16).fill(false),
+    arp: Array(16).fill(true), // Always on for arpeggio
+    bass: Array(16).fill(true), // Always on for bassline
   });
 
   const [params, setParams] = useState({
@@ -15,6 +17,8 @@ const DrumMachine = () => {
     snare: { pitch: 200, decay: 0.2, volume: 0.7, distortion: 0, delay: 0, chorus: 0 },
     hihat: { pitch: 800, decay: 0.1, volume: 0.6, distortion: 0, delay: 0, chorus: 0 },
     openhat: { pitch: 1000, decay: 0.4, volume: 0.5, distortion: 0, delay: 0, chorus: 0 },
+    arp: { volume: 0.3, distortion: 0, delay: 0, chorus: 0, waveform: 'triangle' }, // Arpeggio with effects
+    bass: { volume: 0.4 }, // Only volume control for bassline
   });
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,6 +37,20 @@ const DrumMachine = () => {
   const effectsRef = useRef({});
   const wsRef = useRef(null);
   const paramUpdateTimeouts = useRef({});
+  
+  // Musical patterns for arp and bass in C major
+  const arpPattern = [
+    // Cmaj7 arpeggio: C-E-G-B
+    'C4', 'E4', 'G4', 'B4', 'C5', 'B4', 'G4', 'E4',
+    // Fmaj7 arpeggio: F-A-C-E  
+    'F4', 'A4', 'C5', 'E5', 'F5', 'E5', 'C5', 'A4'
+  ];
+  
+  const bassPattern = [
+    // Root notes with some movement
+    'C2', 'C2', 'E2', 'G2', 'C2', 'C2', 'G2', 'E2',
+    'F2', 'F2', 'A2', 'C3', 'F2', 'F2', 'C3', 'A2'
+  ];
 
   // Initialize audio synthesis
   useEffect(() => {
@@ -56,6 +74,8 @@ const DrumMachine = () => {
         snare: new Tone.Analyser('fft', 512),
         hihat: new Tone.Analyser('fft', 512),
         openhat: new Tone.Analyser('fft', 512),
+        arp: new Tone.Analyser('fft', 512),
+        bass: new Tone.Analyser('fft', 512),
         master: masterAnalyzer // Add master analyzer
       };
 
@@ -81,6 +101,11 @@ const DrumMachine = () => {
             distortion: new Tone.Distortion(0),
             delay: new Tone.FeedbackDelay('8n', 0),
             chorus: new Tone.Chorus({frequency: 4, delayTime: 2.5, depth: 0}).start()
+          },
+          arp: {
+            distortion: new Tone.Distortion(0),
+            delay: new Tone.FeedbackDelay('8n', 0),
+            chorus: new Tone.Chorus({frequency: 4, delayTime: 2.5, depth: 0}).start()
           }
         };
       } catch (error) {
@@ -90,7 +115,8 @@ const DrumMachine = () => {
           kick: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
           snare: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
           hihat: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
-          openhat: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null }
+          openhat: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
+          arp: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null }
         };
       }
 
@@ -140,7 +166,24 @@ const DrumMachine = () => {
           effectsRef.current.openhat.distortion,
           effectsRef.current.openhat.delay,
           ...(effectsRef.current.openhat.chorus ? [effectsRef.current.openhat.chorus] : [])
-        ).fan(analyzersRef.current.openhat, masterAnalyzer).toDestination()
+        ).fan(analyzersRef.current.openhat, masterAnalyzer).toDestination(),
+
+        // Arpeggio synth - bright, sparkly sound
+        arp: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.1, decay: 0.3, sustain: 0.3, release: 0.8 }
+        }).chain(
+          effectsRef.current.arp.distortion,
+          effectsRef.current.arp.delay,
+          ...(effectsRef.current.arp.chorus ? [effectsRef.current.arp.chorus] : [])
+        ).fan(analyzersRef.current.arp, masterAnalyzer).toDestination(),
+
+        // Bass synth - deep, warm sound  
+        bass: new Tone.MonoSynth({
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: 0.05, decay: 0.3, sustain: 0.4, release: 0.8 },
+          filter: { Q: 2, frequency: 120 }
+        }).fan(analyzersRef.current.bass, masterAnalyzer).toDestination()
       };
 
       // Apply initial parameters
@@ -192,12 +235,16 @@ const DrumMachine = () => {
               snare: data.data.tracks.snare.pattern,
               hihat: data.data.tracks.hihat.pattern,
               openhat: data.data.tracks.openhat.pattern,
+              arp: Array(16).fill(true), // Keep arp always on
+              bass: Array(16).fill(true), // Keep bass always on
             });
             setParams({
               kick: data.data.tracks.kick.params,
               snare: data.data.tracks.snare.params,
               hihat: data.data.tracks.hihat.params,
               openhat: data.data.tracks.openhat.params,
+              arp: { volume: 0.3, distortion: 0, delay: 0, chorus: 0, waveform: 'triangle' }, // Keep local arp params with effects
+              bass: { volume: 0.4 }, // Keep local bass params
             });
             setBpm(data.data.bpm);
             setIsPlaying(data.data.playing);
@@ -344,6 +391,38 @@ const DrumMachine = () => {
     if (effectsRef.current.openhat.chorus && typeof params.openhat.chorus === 'number') {
       effectsRef.current.openhat.chorus.depth = params.openhat.chorus;
     }
+
+    // Update arp parameters
+    if (synthsRef.current.arp && typeof params.arp.volume === 'number') {
+      synthsRef.current.arp.volume.value = Tone.gainToDb(params.arp.volume);
+    }
+    // Update arp waveform
+    if (synthsRef.current.arp && params.arp.waveform) {
+      try {
+        synthsRef.current.arp.set({
+          oscillator: { type: params.arp.waveform }
+        });
+      } catch (error) {
+        console.error('Failed to set arp waveform:', error);
+      }
+    }
+    // Update arp effects
+    if (effectsRef.current.arp) {
+      if (typeof params.arp.distortion === 'number') {
+        effectsRef.current.arp.distortion.distortion = params.arp.distortion;
+      }
+      if (typeof params.arp.delay === 'number') {
+        effectsRef.current.arp.delay.wet.value = params.arp.delay;
+      }
+      if (effectsRef.current.arp.chorus && typeof params.arp.chorus === 'number') {
+        effectsRef.current.arp.chorus.depth = params.arp.chorus;
+      }
+    }
+
+    // Update bass parameters
+    if (synthsRef.current.bass && typeof params.bass.volume === 'number') {
+      synthsRef.current.bass.volume.value = Tone.gainToDb(params.bass.volume);
+    }
   };
 
   useEffect(() => {
@@ -365,6 +444,14 @@ const DrumMachine = () => {
                 synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
               } else if (track === 'snare') {
                 synthsRef.current[track].triggerAttackRelease(params[track].decay, time);
+              } else if (track === 'arp') {
+                // Play arpeggio note
+                const note = arpPattern[step];
+                synthsRef.current[track].triggerAttackRelease(note, '8n', time);
+              } else if (track === 'bass') {
+                // Play bass note
+                const note = bassPattern[step];
+                synthsRef.current[track].triggerAttackRelease(note, '4n', time);
               } else {
                 synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
               }
@@ -678,101 +765,157 @@ const DrumMachine = () => {
                     
                     {/* Parameter Controls */}
                     <div className="flex items-center gap-6 text-sm">
-                      <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
-                        <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">PITCH:</label>
-                        <input
-                          type="range"
-                          min={track === 'kick' ? 40 : 100}
-                          max={track === 'kick' ? 120 : 2000}
-                          value={params[track].pitch}
-                          onChange={(e) => updateParams(track, { ...params[track], pitch: parseInt(e.target.value) })}
-                          disabled={!connected}
-                          className="w-20 accent-cyan-400"
-                        />
-                        <span className="w-12 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].pitch}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
-                        <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">DECAY:</label>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="2"
-                          step="0.1"
-                          value={params[track].decay}
-                          onChange={(e) => updateParams(track, { ...params[track], decay: parseFloat(e.target.value) })}
-                          disabled={!connected}
-                          className="w-20 accent-cyan-400"
-                        />
-                        <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].decay}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
-                        <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">VOL:</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={params[track].volume}
-                          onChange={(e) => updateParams(track, { ...params[track], volume: parseFloat(e.target.value) })}
-                          disabled={!connected}
-                          className="w-20 accent-cyan-400"
-                        />
-                        <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].volume}</span>
-                      </div>
+                      {track === 'bass' ? (
+                        // Bass track - only volume control
+                        <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                          <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">VOL:</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={params[track].volume}
+                            onChange={(e) => updateParams(track, { ...params[track], volume: parseFloat(e.target.value) })}
+                            disabled={false}
+                            className="w-20 accent-cyan-400"
+                          />
+                          <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].volume}</span>
+                        </div>
+                      ) : track === 'arp' ? (
+                        // Arp track - volume and waveform controls
+                        <>
+                          <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                            <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">VOL:</label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.1"
+                              value={params[track].volume}
+                              onChange={(e) => updateParams(track, { ...params[track], volume: parseFloat(e.target.value) })}
+                              disabled={false}
+                              className="w-20 accent-cyan-400"
+                            />
+                            <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].volume}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                            <label className="text-yellow-300 font-bold tracking-wider w-16 text-left">WAVE:</label>
+                            <select
+                              value={params[track].waveform}
+                              onChange={(e) => updateParams(track, { ...params[track], waveform: e.target.value })}
+                              disabled={false}
+                              className="w-24 bg-slate-900 text-yellow-300 border border-slate-600 rounded px-2 py-1 text-sm font-mono"
+                            >
+                              <option value="sine">SINE</option>
+                              <option value="triangle">TRI</option>
+                              <option value="square">SQR</option>
+                              <option value="sawtooth">SAW</option>
+                            </select>
+                          </div>
+                        </>
+                      ) : (
+                        // Drum tracks - full controls
+                        <>
+                          <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                            <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">PITCH:</label>
+                            <input
+                              type="range"
+                              min={track === 'kick' ? 40 : 100}
+                              max={track === 'kick' ? 120 : 2000}
+                              value={params[track].pitch}
+                              onChange={(e) => updateParams(track, { ...params[track], pitch: parseInt(e.target.value) })}
+                              disabled={!connected}
+                              className="w-20 accent-cyan-400"
+                            />
+                            <span className="w-12 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].pitch}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                            <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">DECAY:</label>
+                            <input
+                              type="range"
+                              min="0.1"
+                              max="2"
+                              step="0.1"
+                              value={params[track].decay}
+                              onChange={(e) => updateParams(track, { ...params[track], decay: parseFloat(e.target.value) })}
+                              disabled={!connected}
+                              className="w-20 accent-cyan-400"
+                            />
+                            <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].decay}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                            <label className="text-cyan-300 font-bold tracking-wider w-16 text-left">VOL:</label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.1"
+                              value={params[track].volume}
+                              onChange={(e) => updateParams(track, { ...params[track], volume: parseFloat(e.target.value) })}
+                              disabled={!connected}
+                              className="w-20 accent-cyan-400"
+                            />
+                            <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].volume}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                   
-                  {/* Effects Controls */}
-                  <div className="flex items-center justify-end mb-4">
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
-                        <label className="text-orange-300 font-bold tracking-wider w-12 text-left">DIST:</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={params[track].distortion}
-                          onChange={(e) => updateParams(track, { ...params[track], distortion: parseFloat(e.target.value) })}
-                          disabled={!connected}
-                          className="w-16 accent-orange-400"
-                        />
-                        <span className="w-8 text-orange-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].distortion}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
-                        <label className="text-green-300 font-bold tracking-wider w-12 text-left">ECHO:</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={params[track].delay}
-                          onChange={(e) => updateParams(track, { ...params[track], delay: parseFloat(e.target.value) })}
-                          disabled={!connected}
-                          className="w-16 accent-green-400"
-                        />
-                        <span className="w-8 text-green-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].delay}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
-                        <label className="text-purple-300 font-bold tracking-wider w-12 text-left">CHORUS:</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={params[track].chorus}
-                          onChange={(e) => updateParams(track, { ...params[track], chorus: parseFloat(e.target.value) })}
-                          disabled={!connected}
-                          className="w-16 accent-purple-400"
-                        />
-                        <span className="w-8 text-purple-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].chorus}</span>
+                  {/* Effects Controls - for drum tracks and arp */}
+                  {track !== 'bass' && (
+                    <div className="flex items-center justify-end mb-4">
+                      <div className="flex items-center gap-4 text-sm">
+                        <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                          <label className="text-orange-300 font-bold tracking-wider w-12 text-left">DIST:</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={params[track].distortion}
+                            onChange={(e) => updateParams(track, { ...params[track], distortion: parseFloat(e.target.value) })}
+                            disabled={!connected}
+                            className="w-16 accent-orange-400"
+                          />
+                          <span className="w-8 text-orange-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].distortion}</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                          <label className="text-green-300 font-bold tracking-wider w-12 text-left">ECHO:</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={params[track].delay}
+                            onChange={(e) => updateParams(track, { ...params[track], delay: parseFloat(e.target.value) })}
+                            disabled={!connected}
+                            className="w-16 accent-green-400"
+                          />
+                          <span className="w-8 text-green-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].delay}</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                          <label className="text-purple-300 font-bold tracking-wider w-12 text-left">CHORUS:</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={params[track].chorus}
+                            onChange={(e) => updateParams(track, { ...params[track], chorus: parseFloat(e.target.value) })}
+                            disabled={!connected}
+                            className="w-16 accent-purple-400"
+                          />
+                          <span className="w-8 text-purple-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].chorus}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                   
                   {/* Step Grid */}
                   <div className="grid grid-cols-16 gap-3 p-4 bg-slate-800/20 rounded-xl border-2 border-slate-600/20 backdrop-blur-sm">
@@ -781,17 +924,21 @@ const DrumMachine = () => {
                         key={stepIndex}
                         onClick={() => {
                           console.log(`Clicking ${track} step ${stepIndex}, currently: ${active}`);
-                          toggleStep(track, stepIndex);
+                          if (track !== 'arp' && track !== 'bass') {
+                            toggleStep(track, stepIndex);
+                          }
                         }}
-                        disabled={!connected}
-                        className={`w-12 h-12 rounded-lg border-2 font-bold text-xs transition-all duration-200 transform cursor-pointer hover:scale-105 active:scale-95 ${
+                        disabled={!connected && track !== 'arp' && track !== 'bass'}
+                        className={`w-12 h-12 rounded-lg border-2 font-bold text-xs transition-all duration-200 transform ${
+                          track === 'arp' || track === 'bass' ? 'cursor-default' : 'cursor-pointer hover:scale-105 active:scale-95'
+                        } ${
                           currentStep === stepIndex ? 'ring-4 ring-white scale-110' : ''
-                        } ${!connected ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        } ${(!connected && track !== 'arp' && track !== 'bass') ? 'opacity-50 cursor-not-allowed' : ''}`}
                         style={{
-                          backgroundColor: active ? '#f97316' : '#374151',
-                          borderColor: active ? '#ea580c' : '#4b5563',
+                          backgroundColor: active ? (track === 'arp' ? '#10b981' : track === 'bass' ? '#8b5cf6' : '#f97316') : '#374151',
+                          borderColor: active ? (track === 'arp' ? '#059669' : track === 'bass' ? '#7c3aed' : '#ea580c') : '#4b5563',
                           color: active ? 'white' : '#d1d5db',
-                          boxShadow: active ? '0 10px 15px -3px rgba(249, 115, 22, 0.5)' : 'none'
+                          boxShadow: active ? `0 10px 15px -3px ${track === 'arp' ? 'rgba(16, 185, 129, 0.5)' : track === 'bass' ? 'rgba(139, 92, 246, 0.5)' : 'rgba(249, 115, 22, 0.5)'}` : 'none'
                         }}
                       >
                         {active ? '●' : stepIndex + 1}
