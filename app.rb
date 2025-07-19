@@ -32,14 +32,7 @@ end
 set :public_folder, File.dirname(__FILE__) + '/public'
 set :static, true
 
-# Serve index.html for SPA routes
-get '/' do
-  send_file File.join(settings.public_folder, 'index.html')
-end
-
-get '/companion' do
-  send_file File.join(settings.public_folder, 'index.html')
-end
+# Routes will be handled by the main WebSocket route below
 
 # Drum pattern state - shared across all users
 $drum_pattern = {
@@ -66,7 +59,7 @@ $drum_pattern = {
   }
 }
 
-get '/' do
+get ['/', '/companion'] do
   if !request.websocket?
     # Serve the built React app
     send_file File.join(settings.public_folder, 'index.html')
@@ -185,10 +178,7 @@ get '/' do
   end
 end
 
-# Serve companion route
-get '/companion' do
-  send_file File.join(settings.public_folder, 'index.html')
-end
+# Companion route handled by main WebSocket route above
 
 # API endpoint to get current state
 get '/api/state' do
