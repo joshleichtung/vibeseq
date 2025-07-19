@@ -530,11 +530,6 @@ const DrumMachine = () => {
 
           {/* Drum Machine Container - Vintage 909 Style */}
           <div className="rounded-3xl p-12 border-8 border-slate-400/20 backdrop-blur-sm relative bg-transparent">
-            {isCompanionMode && (
-              <div className="absolute top-4 right-8 bg-purple-600 text-purple-100 px-4 py-1 rounded-full text-xs font-bold tracking-wider animate-pulse">
-                🔇 COMPANION MODE
-              </div>
-            )}
             {/* Transport Controls */}
             <div className="flex items-center justify-start gap-12 mb-10 p-8 bg-slate-800/30 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
               <button
