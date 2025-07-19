@@ -20,6 +20,10 @@ const DrumMachine = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [bpm, setBpm] = useState(120);
   const [connected, setConnected] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [isCompanionMode, setIsCompanionMode] = useState(
+    window.location.pathname === '/companion'
+  );
 
   const sequenceRef = useRef(null);
   const synthsRef = useRef({});
@@ -28,6 +32,12 @@ const DrumMachine = () => {
   // Initialize audio synthesis
   useEffect(() => {
     const initAudio = async () => {
+      // Skip audio initialization in companion mode
+      if (isCompanionMode) {
+        console.log('Companion mode: Audio disabled');
+        return;
+      }
+      
       if (Tone.context.state !== 'running') {
         await Tone.start();
       }
@@ -76,7 +86,7 @@ const DrumMachine = () => {
         if (synth.dispose) synth.dispose();
       });
     };
-  }, []);
+  }, [isCompanionMode]);
 
   // WebSocket connection
   useEffect(() => {
@@ -96,6 +106,7 @@ const DrumMachine = () => {
         
         switch (data.type) {
           case 'state_update':
+            console.log('Received state update:', data.data);
             setPattern({
               kick: data.data.tracks.kick.pattern,
               snare: data.data.tracks.snare.pattern,
@@ -191,50 +202,75 @@ const DrumMachine = () => {
   // Sequencer logic
   useEffect(() => {
     if (isPlaying) {
-      Tone.Transport.bpm.value = bpm;
-      
-      sequenceRef.current = new Tone.Sequence((time, step) => {
-        // Trigger sounds for active steps
-        Object.keys(pattern).forEach(track => {
-          if (pattern[track][step] && synthsRef.current[track]) {
-            if (track === 'kick') {
-              synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
-            } else if (track === 'snare') {
-              synthsRef.current[track].triggerAttackRelease(params[track].decay, time);
-            } else {
-              synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
+      if (!isCompanionMode) {
+        // Audio mode: full audio synthesis
+        Tone.Transport.bpm.value = bpm;
+        
+        sequenceRef.current = new Tone.Sequence((time, step) => {
+          // Trigger sounds for active steps
+          Object.keys(pattern).forEach(track => {
+            if (pattern[track][step] && synthsRef.current[track]) {
+              if (track === 'kick') {
+                synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
+              } else if (track === 'snare') {
+                synthsRef.current[track].triggerAttackRelease(params[track].decay, time);
+              } else {
+                synthsRef.current[track].triggerAttackRelease(params[track].pitch, params[track].decay, time);
+              }
             }
-          }
-        });
+          });
 
-        // Update current step for UI
-        Tone.Draw.schedule(() => {
-          setCurrentStep(step);
+          // Update current step for UI
+          Tone.Draw.schedule(() => {
+            setCurrentStep(step);
+            sendWebSocketMessage({
+              type: 'step_update',
+              step: step
+            });
+          }, time);
+        }, Array.from({length: 16}, (_, i) => i), '16n');
+
+        sequenceRef.current.start(0);
+        Tone.Transport.start();
+      } else {
+        // Companion mode: visual-only sequencer using setInterval
+        const stepDuration = (60 / bpm / 4) * 1000; // Duration per 16th note in ms
+        let currentStepLocal = 0;
+        
+        const interval = setInterval(() => {
+          setCurrentStep(currentStepLocal);
           sendWebSocketMessage({
             type: 'step_update',
-            step: step
+            step: currentStepLocal
           });
-        }, time);
-      }, Array.from({length: 16}, (_, i) => i), '16n');
-
-      sequenceRef.current.start(0);
-      Tone.Transport.start();
+          currentStepLocal = (currentStepLocal + 1) % 16;
+        }, stepDuration);
+        
+        // Store interval reference for cleanup
+        sequenceRef.current = { stop: () => clearInterval(interval), dispose: () => {} };
+      }
     } else {
       if (sequenceRef.current) {
         sequenceRef.current.stop();
-        sequenceRef.current.dispose();
+        if (sequenceRef.current.dispose) {
+          sequenceRef.current.dispose();
+        }
       }
-      Tone.Transport.stop();
+      if (!isCompanionMode) {
+        Tone.Transport.stop();
+      }
       setCurrentStep(0);
     }
 
     return () => {
       if (sequenceRef.current) {
         sequenceRef.current.stop();
-        sequenceRef.current.dispose();
+        if (sequenceRef.current.dispose) {
+          sequenceRef.current.dispose();
+        }
       }
     };
-  }, [isPlaying, pattern, params, bpm]);
+  }, [isPlaying, pattern, params, bpm, isCompanionMode]);
 
   const sendWebSocketMessage = (message) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -242,7 +278,17 @@ const DrumMachine = () => {
     }
   };
 
-  const toggleStep = (track, step) => {
+  const toggleStep = async (track, step) => {
+    // Initialize audio on first user interaction (only in audio mode)
+    if (!isCompanionMode && Tone.context.state !== 'running') {
+      try {
+        await Tone.start();
+        console.log('Audio context started via step click');
+      } catch (error) {
+        console.error('Failed to start audio:', error);
+      }
+    }
+    
     sendWebSocketMessage({
       type: 'toggle_step',
       track: track,
@@ -259,14 +305,19 @@ const DrumMachine = () => {
   };
 
   const handlePlay = async () => {
-    if (Tone.context.state !== 'running') {
-      await Tone.start();
+    try {
+      if (!isCompanionMode && Tone.context.state !== 'running') {
+        await Tone.start();
+        console.log('Audio context started');
+      }
+      
+      sendWebSocketMessage({
+        type: 'transport_control',
+        action: 'play'
+      });
+    } catch (error) {
+      console.error('Failed to start audio:', error);
     }
-    
-    sendWebSocketMessage({
-      type: 'transport_control',
-      action: 'play'
-    });
   };
 
   const handleStop = () => {
@@ -284,136 +335,318 @@ const DrumMachine = () => {
     });
   };
 
-  const trackColors = {
-    kick: 'bg-red-500',
-    snare: 'bg-blue-500', 
-    hihat: 'bg-yellow-500',
-    openhat: 'bg-green-500'
+  const handleClearPattern = () => {
+    console.log('Clearing pattern...');
+    sendWebSocketMessage({
+      type: 'clear_pattern'
+    });
+  };
+
+  const toggleMode = () => {
+    const newMode = !isCompanionMode;
+    setIsCompanionMode(newMode);
+    
+    // Update URL without page refresh
+    const newPath = newMode ? '/companion' : '/';
+    window.history.pushState({}, '', newPath);
+  };
+
+  const getVintageStepClasses = (track, active, stepIndex, currentStep, connected) => {
+    const baseClasses = 'w-12 h-12 rounded-lg border-2 font-bold text-xs transition-all duration-200 transform';
+    const currentStepClasses = currentStep === stepIndex ? 'ring-4 ring-white scale-110' : '';
+    const disabledClasses = !connected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
+    const hoverClasses = 'hover:scale-105 active:scale-95';
+    
+    let colorClasses = '';
+    if (active) {
+      // Step is ON - BRIGHT ORANGE
+      colorClasses = 'bg-orange-500 border-orange-400 text-white shadow-lg shadow-orange-500/50';
+    } else {
+      // Step is OFF - dark
+      colorClasses = 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600';
+    }
+    
+    return `${baseClasses} ${colorClasses} ${currentStepClasses} ${hoverClasses} ${disabledClasses}`;
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-4xl font-bold">Collaborative Drum Machine</h1>
-          <div className={`flex items-center gap-2 px-3 py-1 rounded ${connected ? 'bg-green-600' : 'bg-red-600'}`}>
-            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-300' : 'bg-red-300'}`}></div>
-            <span className="text-sm">{connected ? 'Connected' : 'Disconnected'}</span>
-          </div>
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-pink-900 to-indigo-900 relative overflow-hidden">
+        {/* Vaporwave Background Elements */}
+        <div className="absolute inset-0 bg-gradient-to-t from-cyan-400/10 via-transparent to-pink-400/10"></div>
+        <div className="absolute top-0 left-0 w-full h-full">
+          <div className="absolute top-20 left-10 w-32 h-32 bg-pink-400/20 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-32 right-16 w-48 h-48 bg-cyan-400/20 rounded-full blur-3xl"></div>
+          <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-purple-400/20 rounded-full blur-2xl"></div>
         </div>
-
-        {/* Transport Controls */}
-        <div className="flex items-center gap-4 mb-8 p-4 bg-gray-800 rounded-lg">
-          <button
-            onClick={handlePlay}
-            disabled={!connected}
-            className="px-6 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 rounded font-medium"
-          >
-            Play
-          </button>
-          <button
-            onClick={handleStop}
-            disabled={!connected}
-            className="px-6 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 rounded font-medium"
-          >
-            Stop
-          </button>
-          <div className="flex items-center gap-2">
-            <label className="text-sm">BPM:</label>
-            <input
-              type="range"
-              min="60"
-              max="180"
-              value={bpm}
-              onChange={(e) => handleBpmChange(parseInt(e.target.value))}
-              disabled={!connected}
-              className="w-20"
-            />
-            <span className="text-sm w-8">{bpm}</span>
-          </div>
-        </div>
-
-        {/* Pattern Grid */}
-        <div className="space-y-4">
-          {Object.keys(pattern).map(track => (
-            <div key={track} className="p-4 bg-gray-800 rounded-lg">
-              <div className="flex items-center gap-4 mb-4">
-                <h3 className="text-lg font-medium capitalize w-20">{track}</h3>
-                
-                {/* Parameter Controls */}
-                <div className="flex items-center gap-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <label>Pitch:</label>
-                    <input
-                      type="range"
-                      min={track === 'kick' ? 40 : 100}
-                      max={track === 'kick' ? 120 : 2000}
-                      value={params[track].pitch}
-                      onChange={(e) => updateParams(track, { ...params[track], pitch: parseInt(e.target.value) })}
-                      disabled={!connected}
-                      className="w-16"
-                    />
-                    <span className="w-12">{params[track].pitch}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <label>Decay:</label>
-                    <input
-                      type="range"
-                      min="0.1"
-                      max="2"
-                      step="0.1"
-                      value={params[track].decay}
-                      onChange={(e) => updateParams(track, { ...params[track], decay: parseFloat(e.target.value) })}
-                      disabled={!connected}
-                      className="w-16"
-                    />
-                    <span className="w-8">{params[track].decay}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <label>Vol:</label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={params[track].volume}
-                      onChange={(e) => updateParams(track, { ...params[track], volume: parseFloat(e.target.value) })}
-                      disabled={!connected}
-                      className="w-16"
-                    />
-                    <span className="w-8">{params[track].volume}</span>
-                  </div>
-                </div>
-              </div>
+        
+        {/* Main Content Container */}
+        <div className="relative z-10 flex items-center justify-center min-h-screen p-8">
+        <div className="w-full max-w-6xl">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-pink-300 to-cyan-300 bg-clip-text text-transparent">
+              Collaborative Drum Machine
+            </h1>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  console.log('Help button clicked, showHelp:', showHelp);
+                  setShowHelp(true);
+                }}
+                className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-200 rounded-full backdrop-blur-sm transition-all duration-200 flex items-center gap-2 font-medium"
+              >
+                <span>❓</span> Help
+              </button>
               
-              {/* Step Grid */}
-              <div className="grid grid-cols-16 gap-1">
-                {pattern[track].map((active, stepIndex) => (
-                  <button
-                    key={stepIndex}
-                    onClick={() => toggleStep(track, stepIndex)}
-                    disabled={!connected}
-                    className={`
-                      w-12 h-12 rounded border-2 font-medium text-xs
-                      ${active 
-                        ? `${trackColors[track]} border-white` 
-                        : 'bg-gray-700 border-gray-600 hover:border-gray-500'
-                      }
-                      ${currentStep === stepIndex ? 'ring-2 ring-white' : ''}
-                      disabled:opacity-50
-                    `}
-                  >
-                    {stepIndex + 1}
-                  </button>
-                ))}
+              <button
+                onClick={toggleMode}
+                className={`px-4 py-2 rounded-full backdrop-blur-sm transition-all duration-200 flex items-center gap-2 font-medium border ${
+                  isCompanionMode 
+                    ? 'bg-purple-500/20 border-purple-400/30 text-purple-200 hover:bg-purple-500/30' 
+                    : 'bg-orange-500/20 border-orange-400/30 text-orange-200 hover:bg-orange-500/30'
+                }`}
+              >
+                <span>{isCompanionMode ? '🔇' : '🔊'}</span> 
+                {isCompanionMode ? 'Companion' : 'Audio'}
+              </button>
+              
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-sm border ${
+                connected 
+                  ? 'bg-emerald-400/20 border-emerald-400/30 text-emerald-200' 
+                  : 'bg-rose-400/20 border-rose-400/30 text-rose-200'
+              }`}>
+                <div className={`w-3 h-3 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`}></div>
+                <span className="text-sm font-medium">{connected ? 'Connected' : 'Disconnected'}</span>
               </div>
             </div>
-          ))}
+          </div>
+
+          {/* Drum Machine Container - Vintage 909 Style */}
+          <div className="bg-gradient-to-br from-slate-200 to-slate-300 rounded-3xl p-12 shadow-2xl border-8 border-slate-400/50 backdrop-blur-sm relative">
+            {/* Vintage Labels */}
+            <div className="absolute top-4 left-8 bg-slate-700 text-slate-200 px-4 py-1 rounded-full text-xs font-bold tracking-wider">
+              CR-909 COLLABORATIVE
+            </div>
+            {isCompanionMode && (
+              <div className="absolute top-4 right-8 bg-purple-600 text-purple-100 px-4 py-1 rounded-full text-xs font-bold tracking-wider animate-pulse">
+                🔇 COMPANION MODE
+              </div>
+            )}
+            {/* Transport Controls */}
+            <div className="flex items-center justify-center gap-6 mb-10 p-6 bg-slate-800 rounded-2xl shadow-inner border-4 border-slate-600/50">
+              <button
+                onClick={handlePlay}
+                disabled={!connected}
+                className="px-8 py-3 bg-gradient-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-emerald-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
+              >
+                ▶ PLAY
+              </button>
+              <button
+                onClick={handleStop}
+                disabled={!connected}
+                className="px-8 py-3 bg-gradient-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-rose-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
+              >
+                ■ STOP
+              </button>
+              <button
+                onClick={handleClearPattern}
+                disabled={!connected}
+                className="px-8 py-3 bg-gradient-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:from-slate-400 disabled:to-slate-500 rounded-xl font-bold text-slate-900 shadow-lg border-2 border-amber-600 disabled:border-slate-600 transition-all duration-200 transform active:scale-95"
+              >
+                ✕ CLEAR
+              </button>
+              <div className="flex items-center gap-3 bg-slate-700 px-6 py-3 rounded-xl border-2 border-slate-600">
+                <label className="text-sm font-bold text-cyan-300 tracking-wider">TEMPO:</label>
+                <input
+                  type="range"
+                  min="60"
+                  max="180"
+                  value={bpm}
+                  onChange={(e) => handleBpmChange(parseInt(e.target.value))}
+                  disabled={!connected}
+                  className="w-24 accent-cyan-400"
+                />
+                <span className="text-sm font-mono text-pink-300 bg-slate-900 px-3 py-1 rounded-lg border border-slate-600 min-w-[3rem] text-center">{bpm}</span>
+              </div>
+            </div>
+
+            {/* Pattern Grid */}
+            <div className="space-y-4">
+              {Object.keys(pattern).map(track => (
+                <div key={track} className="p-6 bg-slate-700 rounded-2xl border-4 border-slate-600/50 shadow-inner">
+                  <div className="flex items-center gap-6 mb-6">
+                    <h3 className="text-xl font-bold text-slate-100 capitalize w-24 bg-slate-800 px-4 py-2 rounded-lg border-2 border-slate-600 text-center tracking-wider">
+                      {track.toUpperCase()}
+                    </h3>
+                    
+                    {/* Parameter Controls */}
+                    <div className="flex items-center gap-6 text-sm">
+                      <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                        <label className="text-cyan-300 font-bold tracking-wider">PITCH:</label>
+                        <input
+                          type="range"
+                          min={track === 'kick' ? 40 : 100}
+                          max={track === 'kick' ? 120 : 2000}
+                          value={params[track].pitch}
+                          onChange={(e) => updateParams(track, { ...params[track], pitch: parseInt(e.target.value) })}
+                          disabled={!connected}
+                          className="w-20 accent-cyan-400"
+                        />
+                        <span className="w-12 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].pitch}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                        <label className="text-cyan-300 font-bold tracking-wider">DECAY:</label>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="2"
+                          step="0.1"
+                          value={params[track].decay}
+                          onChange={(e) => updateParams(track, { ...params[track], decay: parseFloat(e.target.value) })}
+                          disabled={!connected}
+                          className="w-20 accent-cyan-400"
+                        />
+                        <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].decay}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg border border-slate-600">
+                        <label className="text-cyan-300 font-bold tracking-wider">VOL:</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={params[track].volume}
+                          onChange={(e) => updateParams(track, { ...params[track], volume: parseFloat(e.target.value) })}
+                          disabled={!connected}
+                          className="w-20 accent-cyan-400"
+                        />
+                        <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].volume}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Step Grid */}
+                  <div className="grid grid-cols-16 gap-3 p-4 bg-slate-800 rounded-xl border-2 border-slate-600">
+                    {pattern[track].map((active, stepIndex) => (
+                      <button
+                        key={stepIndex}
+                        onClick={() => {
+                          console.log(`Clicking ${track} step ${stepIndex}, currently: ${active}`);
+                          toggleStep(track, stepIndex);
+                        }}
+                        disabled={!connected}
+                        className={`w-12 h-12 rounded-lg border-2 font-bold text-xs transition-all duration-200 transform cursor-pointer hover:scale-105 active:scale-95 ${
+                          currentStep === stepIndex ? 'ring-4 ring-white scale-110' : ''
+                        } ${!connected ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        style={{
+                          backgroundColor: active ? '#f97316' : '#374151',
+                          borderColor: active ? '#ea580c' : '#4b5563',
+                          color: active ? 'white' : '#d1d5db',
+                          boxShadow: active ? '0 10px 15px -3px rgba(249, 115, 22, 0.5)' : 'none'
+                        }}
+                      >
+                        {active ? '●' : stepIndex + 1}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+          </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Help Modal - Rendered outside main container */}
+      {showHelp && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '16px'
+          }}
+        >
+          <div 
+            style={{
+              backgroundColor: '#1e293b',
+              color: 'white',
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '672px',
+              width: '100%',
+              position: 'relative',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+            }}
+          >
+            <button
+              onClick={() => setShowHelp(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                width: '32px',
+                height: '32px',
+                backgroundColor: '#475569',
+                border: 'none',
+                borderRadius: '50%',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#67e8f9', marginBottom: '24px' }}>
+              🎵 How to Use the Drum Machine
+            </h2>
+            
+            <p style={{ marginBottom: '16px' }}>
+              <strong>Step Sequencer:</strong> Click numbered buttons to create a 16-step drum pattern.
+            </p>
+            <p style={{ marginBottom: '16px' }}>
+              🟠 <strong>Orange buttons</strong> = sound will play | ⬜ <strong>Gray buttons</strong> = silent step
+            </p>
+            <p style={{ marginBottom: '16px' }}>
+              <strong>Controls:</strong> ▶ PLAY, ■ STOP, ✕ CLEAR, TEMPO slider, and sound parameters (PITCH/DECAY/VOL)
+            </p>
+            <p style={{ marginBottom: '24px', textAlign: 'center', padding: '16px', backgroundColor: 'rgba(103, 232, 249, 0.1)', borderRadius: '8px' }}>
+              🤝 <strong>Collaborative:</strong> Share this URL with friends to jam together in real-time!
+            </p>
+            
+            <div style={{ textAlign: 'center' }}>
+              <button
+                onClick={() => setShowHelp(false)}
+                style={{
+                  padding: '8px 24px',
+                  backgroundColor: '#06b6d4',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Got it!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
