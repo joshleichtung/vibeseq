@@ -63,23 +63,11 @@ const VisualizationCanvas = ({ analyzers, isPlaying, currentStep, isBackground =
           window.analyzerWarningShown = true;
         }
         
-        // Draw bottom ring visualizations for each track
+        // Draw bottom spectrum visualizations for each track
         drawBottomRings(ctx, width, height, analyzers.kick || analyzers.master, 'kick');
         drawBottomRings(ctx, width, height, analyzers.snare || analyzers.master, 'snare');
         drawBottomRings(ctx, width, height, analyzers.hihat || analyzers.master, 'hihat');
         drawBottomRings(ctx, width, height, analyzers.openhat || analyzers.master, 'openhat');
-        
-        // Draw middle waveform visualizations for each track
-        drawMiddleWaveforms(ctx, width, height, analyzers.kick || analyzers.master, 'kick');
-        drawMiddleWaveforms(ctx, width, height, analyzers.snare || analyzers.master, 'snare');
-        drawMiddleWaveforms(ctx, width, height, analyzers.hihat || analyzers.master, 'hihat');
-        drawMiddleWaveforms(ctx, width, height, analyzers.openhat || analyzers.master, 'openhat');
-        
-        // Draw top particle visualizations for each track
-        drawTopParticles(ctx, width, height, analyzers.kick || analyzers.master, 'kick');
-        drawTopParticles(ctx, width, height, analyzers.snare || analyzers.master, 'snare');
-        drawTopParticles(ctx, width, height, analyzers.hihat || analyzers.master, 'hihat');
-        drawTopParticles(ctx, width, height, analyzers.openhat || analyzers.master, 'openhat');
         
         // Master analyzer test - draw a simple indicator when ANY audio is detected
         if (analyzers.master) {
@@ -244,147 +232,6 @@ const VisualizationCanvas = ({ analyzers, isPlaying, currentStep, isBackground =
     ctx.restore();
   };
 
-  // Middle waveform visualizations - all tracks get waveforms in middle area
-  const drawMiddleWaveforms = (ctx, width, height, analyzer, track) => {
-    if (!analyzer) return;
-    
-    let data;
-    try {
-      data = analyzer.getValue();
-    } catch (error) {
-      console.error(`Error getting ${track} analyzer data:`, error);
-      return;
-    }
-    
-    // Handle different types of analyzer data
-    let dataArray;
-    if (data instanceof Float32Array || data instanceof Uint8Array) {
-      dataArray = Array.from(data);
-    } else if (Array.isArray(data)) {
-      dataArray = data;
-    } else {
-      return; // Can't process this data type
-    }
-    
-    if (!dataArray || dataArray.length === 0) return;
-    
-    // Calculate RMS for activity detection
-    const rms = Math.sqrt(dataArray.reduce((sum, val) => sum + val * val, 0) / dataArray.length);
-    
-    // Position waveforms in vertical bands across middle area
-    const positions = {
-      kick: { startX: width * 0.1, endX: width * 0.3 },
-      snare: { startX: width * 0.3, endX: width * 0.5 },
-      hihat: { startX: width * 0.5, endX: width * 0.7 },
-      openhat: { startX: width * 0.7, endX: width * 0.9 }
-    };
-    
-    const { startX, endX } = positions[track];
-    const zoneWidth = endX - startX;
-    const centerY = height * 0.5; // Middle area
-    
-    // Track-specific colors
-    const trackColors = {
-      kick: colors.neonPink,
-      snare: colors.electricGreen,
-      hihat: colors.cyan,
-      openhat: colors.electricPurple
-    };
-    
-    // Only draw waveform if there's significant activity
-    if (rms > 0.01) {
-      ctx.save();
-      ctx.strokeStyle = trackColors[track];
-      ctx.lineWidth = 2 + rms * 8; // Variable line width based on amplitude
-      ctx.shadowColor = trackColors[track];
-      ctx.shadowBlur = 15;
-      
-      ctx.beginPath();
-      
-      // Downsample data for better visualization
-      const step = Math.max(1, Math.floor(dataArray.length / 64));
-      for (let i = 0; i < dataArray.length; i += step) {
-        const x = startX + (i / dataArray.length) * zoneWidth;
-        const y = centerY + (dataArray[i] * height * 0.3); // Amplitude
-        
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      }
-      ctx.stroke();
-      
-      ctx.restore();
-    }
-  };
-
-  // Top particle visualizations - all tracks get particles at top of screen
-  const drawTopParticles = (ctx, width, height, analyzer, track) => {
-    if (!analyzer) return;
-    
-    let data;
-    try {
-      data = analyzer.getValue();
-    } catch (error) {
-      console.error(`Error getting ${track} analyzer data:`, error);
-      return;
-    }
-    
-    // For waveform data, calculate RMS (root mean square) for better amplitude detection
-    let amplitude = 0;
-    if (data instanceof Float32Array || data instanceof Uint8Array) {
-      const dataArray = Array.from(data);
-      const rms = Math.sqrt(dataArray.reduce((sum, val) => sum + val * val, 0) / dataArray.length);
-      amplitude = rms;
-    } else if (Array.isArray(data)) {
-      const rms = Math.sqrt(data.reduce((sum, val) => sum + val * val, 0) / data.length);
-      amplitude = rms;
-    } else {
-      amplitude = Math.abs(data);
-    }
-    
-    // Position particles across top area
-    const positions = {
-      kick: width * 0.2,
-      snare: width * 0.4,
-      hihat: width * 0.6,
-      openhat: width * 0.8
-    };
-    
-    const centerX = positions[track];
-    const centerY = height * 0.15; // Top area
-    
-    // Track-specific colors
-    const trackColors = {
-      kick: colors.neonPink,
-      snare: colors.electricGreen,
-      hihat: colors.cyan,
-      openhat: colors.electricPurple
-    };
-    
-    if (amplitude > 0.01) {
-      ctx.save();
-      ctx.fillStyle = trackColors[track];
-      ctx.shadowColor = trackColors[track];
-      ctx.shadowBlur = 15;
-      
-      // Draw scattered particles with more sensitivity
-      const particleCount = Math.min(12, 4 + amplitude * 20);
-      for (let i = 0; i < particleCount; i++) {
-        const angle = (Math.PI * 2 * i) / particleCount;
-        const distance = 20 + amplitude * 100;
-        const x = centerX + Math.cos(angle) * distance;
-        const y = centerY + Math.sin(angle) * distance;
-        
-        ctx.beginPath();
-        ctx.arc(x, y, 2 + amplitude * 8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      ctx.restore();
-    }
-  };
 
 
   // Step pulse effect
