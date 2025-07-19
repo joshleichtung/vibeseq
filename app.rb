@@ -4,6 +4,11 @@ require 'json'
 
 set :server, 'thin'
 set :sockets, []
+set :bind, '0.0.0.0'
+set :port, 4567
+
+# Disable Rack::Protection for Fly.io deployment
+set :protection, false
 
 # Enable CORS for frontend
 configure do
@@ -25,6 +30,16 @@ end
 
 # Serve static files from public directory
 set :public_folder, File.dirname(__FILE__) + '/public'
+set :static, true
+
+# Serve index.html for SPA routes
+get '/' do
+  send_file File.join(settings.public_folder, 'index.html')
+end
+
+get '/companion' do
+  send_file File.join(settings.public_folder, 'index.html')
+end
 
 # Drum pattern state - shared across all users
 $drum_pattern = {
@@ -53,8 +68,8 @@ $drum_pattern = {
 
 get '/' do
   if !request.websocket?
-    # Serve the main page (will be created later)
-    erb :index
+    # Serve the built React app
+    send_file File.join(settings.public_folder, 'index.html')
   else
     request.websocket do |ws|
       ws.onopen do
@@ -168,6 +183,11 @@ get '/' do
       end
     end
   end
+end
+
+# Serve companion route
+get '/companion' do
+  send_file File.join(settings.public_folder, 'index.html')
 end
 
 # API endpoint to get current state
