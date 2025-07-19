@@ -11,10 +11,10 @@ const DrumMachine = () => {
   });
 
   const [params, setParams] = useState({
-    kick: { pitch: 60, decay: 0.3, volume: 0.8 },
-    snare: { pitch: 200, decay: 0.2, volume: 0.7 },
-    hihat: { pitch: 800, decay: 0.1, volume: 0.6 },
-    openhat: { pitch: 1000, decay: 0.4, volume: 0.5 },
+    kick: { pitch: 60, decay: 0.3, volume: 0.8, distortion: 0, delay: 0, chorus: 0 },
+    snare: { pitch: 200, decay: 0.2, volume: 0.7, distortion: 0, delay: 0, chorus: 0 },
+    hihat: { pitch: 800, decay: 0.1, volume: 0.6, distortion: 0, delay: 0, chorus: 0 },
+    openhat: { pitch: 1000, decay: 0.4, volume: 0.5, distortion: 0, delay: 0, chorus: 0 },
   });
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -30,6 +30,7 @@ const DrumMachine = () => {
   const sequenceRef = useRef(null);
   const synthsRef = useRef({});
   const analyzersRef = useRef({});
+  const effectsRef = useRef({});
   const wsRef = useRef(null);
   const paramUpdateTimeouts = useRef({});
 
@@ -58,19 +59,62 @@ const DrumMachine = () => {
         master: masterAnalyzer // Add master analyzer
       };
 
-      // Create drum synthesizers - connect both to individual analyzers AND master
+      // Create effects chains for each track
+      try {
+        effectsRef.current = {
+          kick: {
+            distortion: new Tone.Distortion(0),
+            delay: new Tone.FeedbackDelay('8n', 0),
+            chorus: new Tone.Chorus({frequency: 4, delayTime: 2.5, depth: 0}).start()
+          },
+          snare: {
+            distortion: new Tone.Distortion(0),
+            delay: new Tone.FeedbackDelay('8n', 0),
+            chorus: new Tone.Chorus({frequency: 4, delayTime: 2.5, depth: 0}).start()
+          },
+          hihat: {
+            distortion: new Tone.Distortion(0),
+            delay: new Tone.FeedbackDelay('8n', 0),
+            chorus: new Tone.Chorus({frequency: 4, delayTime: 2.5, depth: 0}).start()
+          },
+          openhat: {
+            distortion: new Tone.Distortion(0),
+            delay: new Tone.FeedbackDelay('8n', 0),
+            chorus: new Tone.Chorus({frequency: 4, delayTime: 2.5, depth: 0}).start()
+          }
+        };
+      } catch (error) {
+        console.error('Failed to create effects:', error);
+        // Fallback to simple effects without chorus
+        effectsRef.current = {
+          kick: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
+          snare: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
+          hihat: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null },
+          openhat: { distortion: new Tone.Distortion(0), delay: new Tone.FeedbackDelay('8n', 0), chorus: null }
+        };
+      }
+
+      // Create drum synthesizers - connect through effects chains to analyzers and master
       synthsRef.current = {
         kick: new Tone.MembraneSynth({
           pitchDecay: 0.05,
           octaves: 10,
           oscillator: { type: 'sine' },
           envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 }
-        }).fan(analyzersRef.current.kick, masterAnalyzer).toDestination(),
+        }).chain(
+          effectsRef.current.kick.distortion,
+          effectsRef.current.kick.delay,
+          ...(effectsRef.current.kick.chorus ? [effectsRef.current.kick.chorus] : [])
+        ).fan(analyzersRef.current.kick, masterAnalyzer).toDestination(),
 
         snare: new Tone.NoiseSynth({
           noise: { type: 'white' },
           envelope: { attack: 0.005, decay: 0.1, sustain: 0.0 }
-        }).fan(analyzersRef.current.snare, masterAnalyzer).toDestination(),
+        }).chain(
+          effectsRef.current.snare.distortion,
+          effectsRef.current.snare.delay,
+          ...(effectsRef.current.snare.chorus ? [effectsRef.current.snare.chorus] : [])
+        ).fan(analyzersRef.current.snare, masterAnalyzer).toDestination(),
 
         hihat: new Tone.MetalSynth({
           frequency: 200,
@@ -79,7 +123,11 @@ const DrumMachine = () => {
           modulationIndex: 32,
           resonance: 4000,
           octaves: 1.5
-        }).fan(analyzersRef.current.hihat, masterAnalyzer).toDestination(),
+        }).chain(
+          effectsRef.current.hihat.distortion,
+          effectsRef.current.hihat.delay,
+          ...(effectsRef.current.hihat.chorus ? [effectsRef.current.hihat.chorus] : [])
+        ).fan(analyzersRef.current.hihat, masterAnalyzer).toDestination(),
 
         openhat: new Tone.MetalSynth({
           frequency: 200,
@@ -88,7 +136,11 @@ const DrumMachine = () => {
           modulationIndex: 32,
           resonance: 4000,
           octaves: 1.5
-        }).fan(analyzersRef.current.openhat, masterAnalyzer).toDestination()
+        }).chain(
+          effectsRef.current.openhat.distortion,
+          effectsRef.current.openhat.delay,
+          ...(effectsRef.current.openhat.chorus ? [effectsRef.current.openhat.chorus] : [])
+        ).fan(analyzersRef.current.openhat, masterAnalyzer).toDestination()
       };
 
       // Apply initial parameters
@@ -103,6 +155,11 @@ const DrumMachine = () => {
       });
       Object.values(analyzersRef.current).forEach(analyzer => {
         if (analyzer.dispose) analyzer.dispose();
+      });
+      Object.values(effectsRef.current).forEach(effects => {
+        Object.values(effects).forEach(effect => {
+          if (effect.dispose) effect.dispose();
+        });
       });
     };
   }, [isCompanionMode]);
@@ -217,7 +274,7 @@ const DrumMachine = () => {
 
   // Update synthesizer parameters
   const updateSynthParams = () => {
-    if (!synthsRef.current.kick) return;
+    if (!synthsRef.current.kick || !effectsRef.current.kick) return;
 
     // Update kick parameters
     if (synthsRef.current.kick.frequency) {
@@ -227,11 +284,31 @@ const DrumMachine = () => {
     if (synthsRef.current.kick.envelope) {
       synthsRef.current.kick.envelope.decay = params.kick.decay;
     }
+    // Update kick effects
+    if (typeof params.kick.distortion === 'number') {
+      effectsRef.current.kick.distortion.distortion = params.kick.distortion;
+    }
+    if (typeof params.kick.delay === 'number') {
+      effectsRef.current.kick.delay.wet.value = params.kick.delay;
+    }
+    if (effectsRef.current.kick.chorus && typeof params.kick.chorus === 'number') {
+      effectsRef.current.kick.chorus.depth = params.kick.chorus;
+    }
 
     // Update snare parameters  
     synthsRef.current.snare.volume.value = Tone.gainToDb(params.snare.volume);
     if (synthsRef.current.snare.envelope) {
       synthsRef.current.snare.envelope.decay = params.snare.decay;
+    }
+    // Update snare effects
+    if (typeof params.snare.distortion === 'number') {
+      effectsRef.current.snare.distortion.distortion = params.snare.distortion;
+    }
+    if (typeof params.snare.delay === 'number') {
+      effectsRef.current.snare.delay.wet.value = params.snare.delay;
+    }
+    if (effectsRef.current.snare.chorus && typeof params.snare.chorus === 'number') {
+      effectsRef.current.snare.chorus.depth = params.snare.chorus;
     }
 
     // Update hihat parameters
@@ -240,12 +317,32 @@ const DrumMachine = () => {
     if (synthsRef.current.hihat.envelope) {
       synthsRef.current.hihat.envelope.decay = params.hihat.decay;
     }
+    // Update hihat effects
+    if (typeof params.hihat.distortion === 'number') {
+      effectsRef.current.hihat.distortion.distortion = params.hihat.distortion;
+    }
+    if (typeof params.hihat.delay === 'number') {
+      effectsRef.current.hihat.delay.wet.value = params.hihat.delay;
+    }
+    if (effectsRef.current.hihat.chorus && typeof params.hihat.chorus === 'number') {
+      effectsRef.current.hihat.chorus.depth = params.hihat.chorus;
+    }
 
     // Update open hat parameters
     synthsRef.current.openhat.frequency.value = params.openhat.pitch;
     synthsRef.current.openhat.volume.value = Tone.gainToDb(params.openhat.volume);
     if (synthsRef.current.openhat.envelope) {
       synthsRef.current.openhat.envelope.decay = params.openhat.decay;
+    }
+    // Update openhat effects
+    if (typeof params.openhat.distortion === 'number') {
+      effectsRef.current.openhat.distortion.distortion = params.openhat.distortion;
+    }
+    if (typeof params.openhat.delay === 'number') {
+      effectsRef.current.openhat.delay.wet.value = params.openhat.delay;
+    }
+    if (effectsRef.current.openhat.chorus && typeof params.openhat.chorus === 'number') {
+      effectsRef.current.openhat.chorus.depth = params.openhat.chorus;
     }
   };
 
@@ -532,18 +629,20 @@ const DrumMachine = () => {
           <div className="rounded-3xl p-12 border-8 border-slate-400/20 backdrop-blur-sm relative bg-transparent">
             {/* Transport Controls */}
             <div className="flex items-center justify-start gap-12 mb-10 p-8 bg-slate-800/30 rounded-2xl border-4 border-slate-600/20 backdrop-blur-sm">
-              <button
-                onClick={handlePlayStop}
-                disabled={!connected}
-                className={`rounded-xl font-bold text-slate-900 shadow-lg border-2 transition-all duration-200 transform active:scale-95 ${
-                  isPlaying
-                    ? 'bg-gradient-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 border-rose-600'
-                    : 'bg-gradient-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 border-emerald-600'
-                } disabled:from-slate-400 disabled:to-slate-500 disabled:border-slate-600`}
-                style={{ padding: '1.5rem 3rem', fontSize: '1.5rem', minHeight: '4rem', minWidth: '8rem' }}
-              >
-                {isPlaying ? '■ STOP' : '▶ PLAY'}
-              </button>
+              {!isCompanionMode && (
+                <button
+                  onClick={handlePlayStop}
+                  disabled={!connected}
+                  className={`rounded-xl font-bold text-slate-900 shadow-lg border-2 transition-all duration-200 transform active:scale-95 ${
+                    isPlaying
+                      ? 'bg-gradient-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 border-rose-600'
+                      : 'bg-gradient-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 border-emerald-600'
+                  } disabled:from-slate-400 disabled:to-slate-500 disabled:border-slate-600`}
+                  style={{ padding: '1.5rem 3rem', fontSize: '1.5rem', minHeight: '4rem', minWidth: '8rem' }}
+                >
+                  {isPlaying ? '■ STOP' : '▶ PLAY'}
+                </button>
+              )}
               <button
                 onClick={handleClearPattern}
                 disabled={!connected}
@@ -621,6 +720,56 @@ const DrumMachine = () => {
                           className="w-20 accent-cyan-400"
                         />
                         <span className="w-10 text-pink-300 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-600 text-center">{params[track].volume}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Effects Controls */}
+                  <div className="flex items-center justify-end mb-4">
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                        <label className="text-orange-300 font-bold tracking-wider w-12 text-left">DIST:</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={params[track].distortion}
+                          onChange={(e) => updateParams(track, { ...params[track], distortion: parseFloat(e.target.value) })}
+                          disabled={!connected}
+                          className="w-16 accent-orange-400"
+                        />
+                        <span className="w-8 text-orange-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].distortion}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                        <label className="text-green-300 font-bold tracking-wider w-12 text-left">ECHO:</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={params[track].delay}
+                          onChange={(e) => updateParams(track, { ...params[track], delay: parseFloat(e.target.value) })}
+                          disabled={!connected}
+                          className="w-16 accent-green-400"
+                        />
+                        <span className="w-8 text-green-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].delay}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                        <label className="text-purple-300 font-bold tracking-wider w-12 text-left">CHORUS:</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={params[track].chorus}
+                          onChange={(e) => updateParams(track, { ...params[track], chorus: parseFloat(e.target.value) })}
+                          disabled={!connected}
+                          className="w-16 accent-purple-400"
+                        />
+                        <span className="w-8 text-purple-300 font-mono bg-slate-800 px-1 py-1 rounded border border-slate-700 text-center text-xs">{params[track].chorus}</span>
                       </div>
                     </div>
                   </div>
