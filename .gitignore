@@ -26,12 +26,17 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+frontend-dev.log
+server.log
 
 # Node.js
 node_modules/
 dist/
 dist-ssr/
 *.local
+
+# Vite build assets
+public/assets/
 
 # Editor directories and files
 .vscode/
