@@ -1,0 +1,23 @@
+# Git
+.git
+.gitignore
+
+# Dependencies
+node_modules
+.bundle
+vendor/bundle
+
+# Development files
+.claude
+README.md
+
+# Build artifacts
+frontend/dist
+frontend/node_modules
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db

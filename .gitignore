@@ -42,3 +42,11 @@ dist-ssr/
 *.njsproj
 *.sln
 *.sw?
+
+# Ruby bundler
+.bundle/
+vendor/
+Gemfile.lock
+
+# Claude
+.claude/
